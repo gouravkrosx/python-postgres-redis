@@ -1,0 +1,39 @@
+version: api.keploy.io/v1beta1
+kind: Http
+name: test-6
+spec:
+    metadata: {}
+    req:
+        method: DELETE
+        proto_major: 1
+        proto_minor: 1
+        url: http://localhost:8080/items/5
+        header:
+            Accept: '*/*'
+            Host: localhost:8080
+            User-Agent: curl/7.88.1
+        body: ""
+        timestamp: 2024-10-23T18:59:30.938346624+05:30
+    resp:
+        status_code: 404
+        header:
+            Content-Length: "27"
+            Content-Type: application/json; charset=utf-8
+            Date: Wed, 23 Oct 2024 13:29:30 GMT
+            Server: Python/3.11 aiohttp/3.10.10
+        body: '{"error": "Item not found"}'
+        status_message: Not Found
+        proto_major: 0
+        proto_minor: 0
+        timestamp: 2024-10-23T18:59:32.964523137+05:30
+    objects: []
+    assertions:
+        noise:
+            header.Date: []
+    created: 1729690172
+curl: |
+    curl --request DELETE \
+      --url http://localhost:8080/items/5 \
+      --header 'User-Agent: curl/7.88.1' \
+      --header 'Accept: */*' \
+      --header 'Host: localhost:8080' \

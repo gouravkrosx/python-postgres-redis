@@ -1,0 +1,43 @@
+version: api.keploy.io/v1beta1
+kind: Http
+name: test-2
+spec:
+    metadata: {}
+    req:
+        method: PUT
+        proto_major: 1
+        proto_minor: 1
+        url: http://localhost:8080/items/1
+        header:
+            Accept: '*/*'
+            Content-Length: "50"
+            Content-Type: application/json
+            Host: localhost:8080
+            User-Agent: curl/7.88.1
+        body: '{"name": "Biryani", "description": "My love food"}'
+        timestamp: 2024-10-24T09:05:02.193316741Z
+    resp:
+        status_code: 200
+        header:
+            Content-Length: "27"
+            Content-Type: application/json; charset=utf-8
+            Date: Thu, 24 Oct 2024 09:05:02 GMT
+            Server: Python/3.11 aiohttp/3.10.10
+        body: '{"message": "Item updated"}'
+        status_message: OK
+        proto_major: 0
+        proto_minor: 0
+        timestamp: 2024-10-24T09:05:04.294924632Z
+    objects: []
+    assertions:
+        noise:
+            header.Date: []
+    created: 1729760704
+curl: |-
+    curl --request PUT \
+      --url http://localhost:8080/items/1 \
+      --header 'Host: localhost:8080' \
+      --header 'User-Agent: curl/7.88.1' \
+      --header 'Accept: */*' \
+      --header 'Content-Type: application/json' \
+      --data "{\"name\": \"Biryani\", \"description\": \"My love food\"}"

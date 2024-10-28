@@ -1,0 +1,41 @@
+version: "3.8"
+services:
+    redis:
+        image: redis:alpine
+        ports:
+            - "6379:6379"
+        networks:
+            - keploy-network
+    postgres:
+        image: postgres:13-alpine
+        environment:
+            POSTGRES_DB: mydb
+            POSTGRES_USER: user
+            POSTGRES_PASSWORD: password
+        ports:
+            - "5432:5432"
+        networks:
+            - keploy-network
+    app:
+        container_name: pyApp
+        build:
+            context: .
+            args:
+                APP_PATH: ${APP_PATH} # Pass the build argument from the .env file
+        depends_on:
+            - redis
+            - postgres
+        environment:
+            DATABASE_URL: postgres://user:password@postgres:5432/mydb
+            REDIS_HOST: redis
+            APP_PATH: ${APP_PATH} # Also pass it as an environment variable to the container
+        ports:
+            - "8080:8080"
+        volumes:
+            - ${APP_PATH}:${APP_PATH} # Map the same absolute path inside the container
+        stop_grace_period: 50s
+        networks:
+            - keploy-network
+networks:
+    keploy-network:
+        external: true

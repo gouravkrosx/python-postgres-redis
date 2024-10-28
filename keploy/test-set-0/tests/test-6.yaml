@@ -1,0 +1,43 @@
+version: api.keploy.io/v1beta1
+kind: Http
+name: test-6
+spec:
+    metadata: {}
+    req:
+        method: POST
+        proto_major: 1
+        proto_minor: 1
+        url: http://localhost:8080/items
+        header:
+            Accept: '*/*'
+            Content-Length: "55"
+            Content-Type: application/json
+            Host: localhost:8080
+            User-Agent: curl/7.88.1
+        body: '{"name": "Chole Bhature", "description": "My fav food"}'
+        timestamp: 2024-10-23T18:57:28.442998355+05:30
+    resp:
+        status_code: 201
+        header:
+            Content-Length: "34"
+            Content-Type: application/json; charset=utf-8
+            Date: Wed, 23 Oct 2024 13:27:28 GMT
+            Server: Python/3.11 aiohttp/3.10.10
+        body: '{"id": 4, "name": "Chole Bhature"}'
+        status_message: Created
+        proto_major: 0
+        proto_minor: 0
+        timestamp: 2024-10-23T18:57:30.51124122+05:30
+    objects: []
+    assertions:
+        noise:
+            header.Date: []
+    created: 1729690050
+curl: |-
+    curl --request POST \
+      --url http://localhost:8080/items \
+      --header 'User-Agent: curl/7.88.1' \
+      --header 'Accept: */*' \
+      --header 'Content-Type: application/json' \
+      --header 'Host: localhost:8080' \
+      --data "{\"name\": \"Chole Bhature\", \"description\": \"My fav food\"}"

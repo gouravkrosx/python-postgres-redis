@@ -1,0 +1,39 @@
+version: api.keploy.io/v1beta1
+kind: Http
+name: test-5
+spec:
+    metadata: {}
+    req:
+        method: GET
+        proto_major: 1
+        proto_minor: 1
+        url: http://localhost:8080/items/3
+        header:
+            Accept: '*/*'
+            # Host: localhost:8080
+            User-Agent: curl/7.88.1
+        body: ""
+        timestamp: 2024-10-24T07:37:42.028080874Z
+    resp:
+        status_code: 200
+        header:
+            Content-Length: "82"
+            Content-Type: application/json; charset=utf-8
+            Date: Thu, 24 Oct 2024 07:37:42 GMT
+            Server: Python/3.11 aiohttp/3.10.10
+        body: '{"data": {"id": 3, "name": "White golden retriever", "description": "My fav pet"}}'
+        status_message: OK
+        proto_major: 0
+        proto_minor: 0
+        timestamp: 2024-10-24T07:37:44.067480021Z
+    objects: []
+    assertions:
+        noise:
+            header.Date: []
+    created: 1729755464
+curl: |
+    curl --request GET \
+      --url http://localhost:8080/items/3 \
+      --header 'User-Agent: curl/7.88.1' \
+      --header 'Accept: */*' \
+      --header 'Host: localhost:8080' \
