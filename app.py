@@ -28,15 +28,27 @@ async def get_item(request):
 
     return web.json_response({"error": "Item not found"}, status=404)
 
+# async def get_all_items(request):
+#     cached_items = await redis_client.get("items:all")
+#     if cached_items:
+#         return web.json_response({"data": json.loads(cached_items)}, status=200)
+
+#     items = await Item.all().values("id", "name", "description")
+#     items_list = list(items)
+#     await redis_client.set("items:all", json.dumps(items_list))
+
+#     return web.json_response({"data": items_list}, status=200)
+
 async def get_all_items(request):
     cached_items = await redis_client.get("items:all")
     if cached_items:
         return web.json_response({"data": json.loads(cached_items)}, status=200)
 
-    items = await Item.all().values("id", "name", "description")
-    items_list = list(items)
-    await redis_client.set("items:all", json.dumps(items_list))
+    # Remove the .values() call and just return a list of items
+    items = await Item.all()  # No need to call .values()
+    items_list = [{"id": item.id, "name": item.name, "description": item.description} for item in items]
 
+    await redis_client.set("items:all", json.dumps(items_list))
     return web.json_response({"data": items_list}, status=200)
 
 async def create_item(request):
