@@ -1,115 +1,200 @@
-import asyncio
+# test_app.py
+
+import json
 import pytest
-import pytest_asyncio
-from aiohttp import web
-from unittest.mock import AsyncMock, patch
-from app import app
+from aiohttp.test_utils import AioHTTPTestCase
+from unittest import mock
 
-@pytest_asyncio.fixture(scope="session")
-def event_loop():
-    """Create a new event loop for the session."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    yield loop
-    loop.close()
+import os
 
-@pytest_asyncio.fixture(autouse=True)
-async def mock_tortoise_orm():
-    """Mock the Tortoise ORM methods used in the app."""
-    with patch("tortoise.Tortoise.init", new_callable=AsyncMock), \
-         patch("tortoise.Tortoise.generate_schemas", new_callable=AsyncMock), \
-         patch("tortoise.Tortoise.close_connections", new_callable=AsyncMock), \
-         patch("tortoise.connection.ConnectionHandler.close_all", new_callable=AsyncMock), \
-         patch("models.Item.create", new_callable=AsyncMock) as mock_create_item, \
-         patch("models.Item.get_or_none", new_callable=AsyncMock) as mock_get_or_none, \
-         patch("models.Item.all", new_callable=AsyncMock) as mock_all_items:
+# Mock environment variables if needed
+os.environ["REDIS_HOST"] = "localhost"
+os.environ["DATABASE_URL"] = "postgres://user:password@localhost:5432/mydb"
 
-        # Mock item objects with the required attributes
-        mock_item_1 = AsyncMock()
-        mock_item_1.id = 1
-        mock_item_1.name = "Item 1"
-        mock_item_1.description = "Desc 1"
+class TestApp(AioHTTPTestCase):
+    async def get_application(self):
+        # Import inside the method to ensure it's using the same event loop
+        from app import create_app
 
-        mock_item_2 = AsyncMock()
-        mock_item_2.id = 2
-        mock_item_2.name = "Item 2"
-        mock_item_2.description = "Desc 2"
+        # Create the app with register_db=False to prevent database initialization
+        app = create_app(register_db=False)
 
-        # Set the mocked ORM methods to return appropriate values
-        mock_all_items.return_value = [mock_item_1, mock_item_2]
-        mock_create_item.return_value = mock_item_1
-        mock_get_or_none.side_effect = lambda id: mock_item_1 if id == "1" else None
+        # Mock the Redis client and attach it to the app
+        self.redis_client_mock = mock.AsyncMock()
+        app["redis_client"] = self.redis_client_mock
 
-        yield
+        return app
 
-@pytest_asyncio.fixture(autouse=True)
-async def mock_redis_client():
-    """Mock the Redis client methods used in the app."""
-    with patch("app.redis_client", autospec=True) as mock_redis:
-        mock_redis.get = AsyncMock(return_value=None)
-        mock_redis.set = AsyncMock(return_value=None)
-        mock_redis.delete = AsyncMock(return_value=None)
-        yield
+    @mock.patch("app.Item")
+    async def test_get_item_cache_hit(self, mock_item):
+        # Set up the Redis client mock to return cached data
+        cached_item = {"id": "1", "name": "Cached Item", "description": "Cached Description"}
+        self.redis_client_mock.get.return_value = json.dumps(cached_item)
 
-@pytest_asyncio.fixture
-async def client(aiohttp_client):
-    """Create and return a test client for the app."""
-    client = await aiohttp_client(app)
-    yield client
-    await client.close()
+        resp = await self.client.request("GET", "/items/1")
+        assert resp.status == 200
+        data = await resp.json()
+        assert data == {"data": cached_item}
 
-@pytest.mark.asyncio
-async def test_create_item(client):
-    payload = {"name": "New Item", "description": "A new item"}
-    response = await client.post("/items", json=payload)
-    assert response.status == 201
-    json_response = await response.json()
-    assert json_response["id"] == 1
-    assert json_response["name"] == "Item 1"
+        # Ensure Redis get was called
+        self.redis_client_mock.get.assert_awaited_with("item:1")
+        mock_item.get_or_none.assert_not_called()
 
-@pytest.mark.asyncio
-async def test_get_item(client):
-    response = await client.get("/items/1")
-    assert response.status == 200
-    json_response = await response.json()
-    assert str(json_response["data"]["id"]) == '1'
-    assert json_response["data"]["name"] == "Item 1"
+    @mock.patch("app.Item")
+    async def test_get_item_cache_miss_item_found(self, mock_item):
+        # Redis cache miss
+        self.redis_client_mock.get.return_value = None
 
-    response = await client.get("/items/999")
-    assert response.status == 404
-    json_response = await response.json()
-    assert json_response["error"] == "Item not found"
+        # Mock Item.get_or_none to return an item
+        mock_item_instance = mock.Mock()
+        mock_item_instance.id = "1"
+        mock_item_instance.name = "Test Item"
+        mock_item_instance.description = "Test Description"
 
-@pytest.mark.asyncio
-async def test_get_all_items(client):
-    response = await client.get("/items")
-    assert response.status == 200  # Ensure the request succeeds
-    json_response = await response.json()
-    assert len(json_response["data"]) == 2
-    assert json_response["data"][0]["name"] == "Item 1"
-    assert json_response["data"][1]["name"] == "Item 2"
+        # Mock get_or_none as an AsyncMock
+        mock_item.get_or_none = mock.AsyncMock(return_value=mock_item_instance)
 
-@pytest.mark.asyncio
-async def test_update_item(client):
-    payload = {"name": "Updated Item", "description": "Updated description"}
-    response = await client.put("/items/1", json=payload)
-    assert response.status == 200
-    json_response = await response.json()
-    assert json_response["message"] == "Item updated"
+        resp = await self.client.request("GET", "/items/1")
+        assert resp.status == 200
+        data = await resp.json()
+        assert data == {"data": {"id": "1", "name": "Test Item", "description": "Test Description"}}
 
-    response = await client.put("/items/999", json=payload)
-    assert response.status == 404
-    json_response = await response.json()
-    assert json_response["error"] == "Item not found"
+        # Ensure Redis set was called
+        self.redis_client_mock.set.assert_awaited_with("item:1", mock.ANY)
 
-@pytest.mark.asyncio
-async def test_delete_item(client):
-    response = await client.delete("/items/1")
-    assert response.status == 200
-    json_response = await response.json()
-    assert json_response["message"] == "Item deleted"
+    @mock.patch("app.Item")
+    async def test_get_item_cache_miss_item_not_found(self, mock_item):
+        # Redis cache miss
+        self.redis_client_mock.get.return_value = None
 
-    response = await client.delete("/items/999")
-    assert response.status == 404
-    json_response = await response.json()
-    assert json_response["error"] == "Item not found"
+        # Mock get_or_none as an AsyncMock returning None
+        mock_item.get_or_none = mock.AsyncMock(return_value=None)
+
+        resp = await self.client.request("GET", "/items/1")
+        assert resp.status == 404
+        data = await resp.json()
+        assert data == {"error": "Item not found"}
+
+    @mock.patch("app.Item")
+    async def test_get_all_items_cache_hit(self, mock_item):
+        # Set up the Redis client mock to return cached data
+        cached_items = [{"id": "1", "name": "Cached Item", "description": "Cached Description"}]
+        self.redis_client_mock.get.return_value = json.dumps(cached_items)
+
+        resp = await self.client.request("GET", "/items")
+        assert resp.status == 200
+        data = await resp.json()
+        assert data == {"data": cached_items}
+
+        # Ensure Redis get was called
+        self.redis_client_mock.get.assert_awaited_with("items:all")
+        mock_item.all.assert_not_called()
+
+    @mock.patch("app.Item")
+    async def test_get_all_items_cache_miss(self, mock_item):
+        # Redis cache miss
+        self.redis_client_mock.get.return_value = None
+
+        # Mock Item.all() to return a list of items
+        mock_item_instance = mock.Mock()
+        mock_item_instance.id = "1"
+        mock_item_instance.name = "Test Item"
+        mock_item_instance.description = "Test Description"
+
+        # Mock all() as an AsyncMock
+        mock_item.all = mock.AsyncMock(return_value=[mock_item_instance])
+
+        resp = await self.client.request("GET", "/items")
+        assert resp.status == 200
+        data = await resp.json()
+        expected_data = {"data": [{"id": "1", "name": "Test Item", "description": "Test Description"}]}
+        assert data == expected_data
+
+        # Ensure Redis set was called
+        self.redis_client_mock.set.assert_awaited_with("items:all", mock.ANY)
+
+    @mock.patch("app.Item")
+    async def test_create_item(self, mock_item):
+        # Mock Item.create() to return a new item
+        mock_item_instance = mock.Mock()
+        mock_item_instance.id = "1"
+        mock_item_instance.name = "New Item"
+
+        # Mock create() as an AsyncMock
+        mock_item.create = mock.AsyncMock(return_value=mock_item_instance)
+
+        resp = await self.client.request(
+            "POST", "/items", json={"name": "New Item", "description": "New Description"}
+        )
+        assert resp.status == 201
+        data = await resp.json()
+        assert data == {"id": "1", "name": "New Item"}
+
+        # Ensure Redis delete was called
+        self.redis_client_mock.delete.assert_awaited_with("items:all")
+
+    @mock.patch("app.Item")
+    async def test_update_item_found(self, mock_item):
+        # Mock Item.get_or_none() to return an existing item
+        mock_item_instance = mock.Mock()
+        mock_item_instance.id = "1"
+        mock_item_instance.name = "Old Name"
+        mock_item_instance.description = "Old Description"
+
+        # Mock get_or_none as an AsyncMock
+        mock_item.get_or_none = mock.AsyncMock(return_value=mock_item_instance)
+        # Mock save() as an AsyncMock
+        mock_item_instance.save = mock.AsyncMock()
+
+        resp = await self.client.request(
+            "PUT", "/items/1", json={"name": "Updated Name", "description": "Updated Description"}
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        assert data == {"message": "Item updated"}
+
+        # Ensure Redis operations were called
+        self.redis_client_mock.set.assert_awaited_with("item:1", mock.ANY)
+        self.redis_client_mock.delete.assert_awaited_with("items:all")
+
+    @mock.patch("app.Item")
+    async def test_update_item_not_found(self, mock_item):
+        # Mock get_or_none as an AsyncMock returning None
+        mock_item.get_or_none = mock.AsyncMock(return_value=None)
+
+        resp = await self.client.request(
+            "PUT", "/items/1", json={"name": "Updated Name", "description": "Updated Description"}
+        )
+        assert resp.status == 404
+        data = await resp.json()
+        assert data == {"error": "Item not found"}
+
+    @mock.patch("app.Item")
+    async def test_delete_item_found(self, mock_item):
+        # Mock Item.get_or_none() to return an existing item
+        mock_item_instance = mock.Mock()
+        mock_item_instance.id = "1"
+
+        # Mock get_or_none as an AsyncMock
+        mock_item.get_or_none = mock.AsyncMock(return_value=mock_item_instance)
+        # Mock delete() as an AsyncMock
+        mock_item_instance.delete = mock.AsyncMock()
+
+        resp = await self.client.request("DELETE", "/items/1")
+        assert resp.status == 200
+        data = await resp.json()
+        assert data == {"message": "Item deleted"}
+
+        # Ensure Redis delete was called
+        self.redis_client_mock.delete.assert_any_await("item:1")
+        self.redis_client_mock.delete.assert_any_await("items:all")
+
+    @mock.patch("app.Item")
+    async def test_delete_item_not_found(self, mock_item):
+        # Mock get_or_none as an AsyncMock returning None
+        mock_item.get_or_none = mock.AsyncMock(return_value=None)
+
+        resp = await self.client.request("DELETE", "/items/1")
+        assert resp.status == 404
+        data = await resp.json()
+        assert data == {"error": "Item not found"}
